@@ -37,7 +37,6 @@ from data_collector.utils import (
     get_hs_stock_symbols,
     get_us_stock_symbols,
     get_in_stock_symbols,
-    get_bse_stock_symbols,
     get_br_stock_symbols,
     generate_minutes_calendar_from_daily,
     calc_adjusted_price,
@@ -297,6 +296,8 @@ class YahooCollectorUS1min(YahooCollectorUS):
 
 
 class YahooCollectorIN(YahooCollector, ABC):
+    retry = 3  # Skip after 3 failures; many NSE symbols are delisted/illiquid
+
     def get_instrument_list(self):
         logger.info("get INDIA stock symbols......")
         symbols = get_in_stock_symbols()
@@ -321,31 +322,6 @@ class YahooCollectorIN1d(YahooCollectorIN):
 class YahooCollectorIN1min(YahooCollectorIN):
     pass
 
-
-class YahooCollectorBSE(YahooCollector, ABC):
-    def get_instrument_list(self):
-        logger.info("get BSE stock symbols......")
-        symbols = get_bse_stock_symbols() + ["^BSESN"]  # Sensex index
-        logger.info(f"get {len(symbols)} symbols.")
-        return symbols
-
-    def download_index_data(self):
-        pass
-
-    def normalize_symbol(self, symbol):
-        return code_to_fname(symbol).upper()
-
-    @property
-    def _timezone(self):
-        return "Asia/Kolkata"
-
-
-class YahooCollectorBSE1d(YahooCollectorBSE):
-    pass
-
-
-class YahooCollectorBSE1min(YahooCollectorBSE):
-    pass
 
 
 class YahooCollectorBR(YahooCollector, ABC):
@@ -683,7 +659,7 @@ class YahooNormalizeIN1d(YahooNormalizeIN, YahooNormalize1d):
 
 
 class YahooNormalizeIN1min(YahooNormalizeIN, YahooNormalize1min):
-    # NSE/BSE: single session 09:15–15:30 IST, no lunch break
+    # NSE: single session 09:15–15:30 IST, no lunch break
     AM_RANGE = ("09:15:00", "15:29:00")
     PM_RANGE = ("09:15:00", "15:29:00")  # same as AM — generate_1min_from_daily merges and deduplicates
     CALC_PAUSED_NUM = False
@@ -698,29 +674,6 @@ class YahooNormalizeIN1min(YahooNormalizeIN, YahooNormalize1min):
         return fname_to_code(symbol)
 
 
-class YahooNormalizeBSE:
-    def _get_calendar_list(self) -> Iterable[pd.Timestamp]:
-        return get_calendar_list("BSE_ALL")
-
-
-class YahooNormalizeBSE1d(YahooNormalizeBSE, YahooNormalize1d):
-    pass
-
-
-class YahooNormalizeBSE1min(YahooNormalizeBSE, YahooNormalize1min):
-    # BSE: single session 09:15–15:30 IST, no lunch break
-    AM_RANGE = ("09:15:00", "15:29:00")
-    PM_RANGE = ("09:15:00", "15:29:00")
-    CALC_PAUSED_NUM = False
-
-    def _get_calendar_list(self) -> Iterable[pd.Timestamp]:
-        return self.generate_1min_from_daily(self.calendar_list_1d)
-
-    def _get_1d_calendar_list(self):
-        return get_calendar_list("BSE_ALL")
-
-    def symbol_to_yahoo(self, symbol):
-        return fname_to_code(symbol)
 
 
 class YahooNormalizeCN:
@@ -1061,12 +1014,10 @@ class Run(BaseRun):
         # parse index
         _region = self.region.lower()
         # Maps region → (index_list, module_name)
-        # BSE and IN both live in in_index collector
         _region_index_map = {
             "cn":  (["CSI100", "CSI300"],                    "cn_index"),
             "us":  (["SP500", "NASDAQ100", "DJIA", "SP400"], "us_index"),
             "in":  (["NIFTY50", "NIFTY500"],                 "in_index"),
-            "bse": (["SENSEX"],                              "in_index"),
         }
         if _region not in _region_index_map:
             logger.warning(f"Unsupported region: region={_region}, component downloads will be ignored")

@@ -2,11 +2,10 @@
 # Licensed under the MIT License.
 
 """
-India index constituent collector for NSE and BSE indices.
+India index constituent collector for NSE indices.
 
 Supported indices:
     NSE: NIFTY50, NIFTY500
-    BSE: SENSEX
 
 Usage:
     # Parse Nifty 50 instruments
@@ -14,12 +13,8 @@ Usage:
 
     # Parse Nifty 500 instruments
     $ python collector.py --index_name NIFTY500 --qlib_dir ~/.qlib/qlib_data/in_data --method parse_instruments
-
-    # Parse Sensex instruments
-    $ python collector.py --index_name SENSEX --qlib_dir ~/.qlib/qlib_data/in_data --method parse_instruments
 """
 
-import io
 import sys
 import time
 from functools import partial
@@ -45,11 +40,6 @@ NSE_HEADERS = {
     "Referer": "https://www.nseindia.com/",
 }
 
-BSE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Referer": "https://www.bseindia.com/",
-}
-
 # NSE archives CSV URLs — no cookie/JS requirement
 NSE_INDEX_ARCHIVE_URL = {
     "NIFTY50":  "https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv",
@@ -68,13 +58,6 @@ def _format_nse_symbol(symbol: str) -> str:
     Dot→dash conversion for filenames is handled by normalize_symbol."""
     s = symbol.strip().strip("$").strip("*")
     return (s + ".NS").upper()
-
-
-def _format_bse_symbol(scrip_code) -> str:
-    """Convert BSE scrip code to qlib filename format (e.g. 500325 → '500325-BO')."""
-    s = str(scrip_code).strip() + ".BO"
-    s = s.replace(".", "-")
-    return s.upper()
 
 
 class NSEIndexBase(IndexBase):
@@ -179,72 +162,6 @@ class NIFTY500Index(NSEIndexBase):
     @property
     def bench_start_date(self) -> pd.Timestamp:
         return pd.Timestamp("1999-06-15")  # Nifty 500 inception date
-
-
-class SENSEXIndex(IndexBase):
-    """BSE Sensex (BSE 30) index constituent collector."""
-
-    INST_PREFIX = ""
-
-    @property
-    def bench_start_date(self) -> pd.Timestamp:
-        return pd.Timestamp("1986-01-02")  # Sensex inception
-
-    def format_datetime(self, inst_df: pd.DataFrame) -> pd.DataFrame:
-        if self.freq != "day":
-            inst_df[self.END_DATE_FIELD] = inst_df[self.END_DATE_FIELD].apply(
-                lambda x: (pd.Timestamp(x) + pd.Timedelta(hours=23, minutes=59)).strftime("%Y-%m-%d %H:%M:%S")
-            )
-        else:
-            inst_df[self.START_DATE_FIELD] = inst_df[self.START_DATE_FIELD].apply(
-                lambda x: pd.Timestamp(x).strftime("%Y-%m-%d")
-            )
-            inst_df[self.END_DATE_FIELD] = inst_df[self.END_DATE_FIELD].apply(
-                lambda x: pd.Timestamp(x).strftime("%Y-%m-%d")
-            )
-        return inst_df
-
-    @property
-    def calendar_list(self) -> List[pd.Timestamp]:
-        _calendar_list = getattr(self, "_calendar_list", None)
-        if _calendar_list is None:
-            _calendar_list = list(filter(lambda x: x >= self.bench_start_date, get_calendar_list("BSE_ALL")))
-            setattr(self, "_calendar_list", _calendar_list)
-        return _calendar_list
-
-    @deco_retry
-    def _fetch_constituents(self) -> pd.DataFrame:
-        url = "https://api.bseindia.com/BseIndiaAPI/api/GetSensexData/w"
-        resp = requests.get(url, headers=BSE_HEADERS, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        if isinstance(data, list):
-            return pd.DataFrame(data)
-        # Some API versions wrap in a key
-        for key in ("Table", "data", "Data"):
-            if key in data:
-                return pd.DataFrame(data[key])
-        raise ValueError(f"Unexpected BSE API response structure: {list(data.keys())}")
-
-    def get_new_companies(self) -> pd.DataFrame:
-        logger.info(f"Fetching current Sensex constituents from BSE...")
-        df = self._fetch_constituents()
-        # BSE API returns scrip codes in various column names
-        code_col = next((c for c in df.columns if "scrip" in c.lower() or "code" in c.lower()), None)
-        if code_col is None:
-            raise ValueError(f"Cannot find scrip code column in BSE response. Columns: {list(df.columns)}")
-        df[self.SYMBOL_FIELD_NAME] = df[code_col].map(_format_bse_symbol)
-        df[self.START_DATE_FIELD] = self.bench_start_date
-        df[self.END_DATE_FIELD] = self.DEFAULT_END_DATE
-        logger.info(f"Got {len(df)} Sensex constituents.")
-        return df.loc[:, self.INSTRUMENTS_COLUMNS]
-
-    def get_changes(self) -> pd.DataFrame:
-        logger.warning(
-            "Historical Sensex constituent changes are not available via the BSE API. "
-            "Only the current snapshot will be used."
-        )
-        return pd.DataFrame(columns=[self.DATE_FIELD_NAME, self.CHANGE_TYPE_FIELD, self.SYMBOL_FIELD_NAME])
 
 
 if __name__ == "__main__":

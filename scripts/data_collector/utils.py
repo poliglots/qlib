@@ -37,7 +37,6 @@ CALENDAR_BENCH_URL_MAP = {
     # NOTE: Use the time series of ^GSPC(SP500) as the sequence of all stocks
     "US_ALL": "^GSPC",
     "IN_ALL": "^NSEI",
-    "BSE_ALL": "^BSESN",
     "BR_ALL": "^BVSP",
 }
 
@@ -46,7 +45,6 @@ _ALL_CALENDAR_LIST = None
 _HS_SYMBOLS = None
 _US_SYMBOLS = None
 _IN_SYMBOLS = None
-_BSE_SYMBOLS = None
 _BR_SYMBOLS = None
 _EN_FUND_SYMBOLS = None
 _CALENDAR_MAP = {}
@@ -76,7 +74,7 @@ def get_calendar_list(bench_code="CSI300") -> List[pd.Timestamp]:
 
     calendar = _CALENDAR_MAP.get(bench_code, None)
     if calendar is None:
-        if bench_code.startswith("US_") or bench_code.startswith("IN_") or bench_code.startswith("BSE_") or bench_code.startswith("BR_"):
+        if bench_code.startswith("US_") or bench_code.startswith("IN_") or bench_code.startswith("BR_"):
             print(Ticker(CALENDAR_BENCH_URL_MAP[bench_code]))
             print(Ticker(CALENDAR_BENCH_URL_MAP[bench_code]).history(interval="1d", period="max"))
             df = Ticker(CALENDAR_BENCH_URL_MAP[bench_code]).history(interval="1d", period="max")
@@ -432,65 +430,6 @@ def get_in_stock_symbols(qlib_data_path: [str, Path] = None) -> list:
 
     return _IN_SYMBOLS
 
-
-def get_bse_stock_symbols(qlib_data_path: [str, Path] = None) -> list:
-    """get BSE (Bombay Stock Exchange) stock symbols
-
-    Symbols are fetched from the BSE API and suffixed with ".BO" for Yahoo Finance.
-
-    Returns
-    -------
-        stock symbols list, e.g. ["500325-BO", "532540-BO", ...]
-    """
-    global _BSE_SYMBOLS  # pylint: disable=W0603
-
-    @deco_retry
-    def _get_bse():
-        url = "https://api.bseindia.com/BseIndiaAPI/api/ListofScripData/w?Group=&Scripcode=&industry=&segment=Equity&status=Active"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": "https://www.bseindia.com/",
-        }
-        resp = requests.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        # API may return a plain list or a dict with a "Table" key
-        if isinstance(data, list):
-            records = data
-        else:
-            records = data.get("Table", [])
-        if not records:
-            raise ValueError("BSE API returned empty symbol list")
-        # BSE scrip codes are 6-digit numeric; Yahoo Finance uses <CODE>.BO
-        scrip_key = "SCRIP_CD" if "SCRIP_CD" in records[0] else next(
-            k for k in records[0] if "scrip" in k.lower() or "code" in k.lower()
-        )
-        symbols = [str(r[scrip_key]) + ".BO" for r in records if r.get(scrip_key)]
-        return symbols
-
-    def _format(s_):
-        s_ = s_.replace(".", "-")
-        s_ = s_.strip("$")
-        s_ = s_.strip("*")
-        return s_
-
-    if _BSE_SYMBOLS is None:
-        _all_symbols = _get_bse()
-        if qlib_data_path is not None:
-            for _index in ["sensex", "bse500"]:
-                _inst_path = Path(qlib_data_path).joinpath(f"instruments/{_index}.txt")
-                if not _inst_path.exists():
-                    continue
-                ins_df = pd.read_csv(
-                    _inst_path,
-                    sep="\t",
-                    names=["symbol", "start_date", "end_date"],
-                )
-                _all_symbols += ins_df["symbol"].unique().tolist()
-
-        _BSE_SYMBOLS = sorted(set(map(_format, _all_symbols)))
-
-    return _BSE_SYMBOLS
 
 
 def get_br_stock_symbols(qlib_data_path: [str, Path] = None) -> list:
