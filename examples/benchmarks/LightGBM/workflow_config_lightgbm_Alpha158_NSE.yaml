@@ -1,0 +1,77 @@
+qlib_init:
+    provider_uri: "~/.qlib/qlib_data/nse_data"
+    region: in
+
+market: &market all
+benchmark: &benchmark null   # No index downloaded; set to null to skip relative perf
+
+data_handler_config: &data_handler_config
+    start_time: 2020-01-01
+    end_time: 2026-04-05
+    fit_start_time: 2020-01-01
+    fit_end_time: 2022-12-31
+    instruments: *market
+
+port_analysis_config: &port_analysis_config
+    strategy:
+        class: TopkDropoutStrategy
+        module_path: qlib.contrib.strategy
+        kwargs:
+            signal: <PRED>
+            topk: 10       # 41 stocks total; top 10
+            n_drop: 2
+    backtest:
+        start_time: 2024-01-01
+        end_time: 2026-04-05
+        account: 10000000
+        benchmark: *benchmark
+        exchange_kwargs:
+            limit_threshold: 0.2    # NSE 20% circuit limit
+            deal_price: close
+            open_cost: 0.001        # ~10 bps brokerage
+            close_cost: 0.002       # ~10 bps brokerage + STT
+            min_cost: 20            # INR minimum cost
+
+task:
+    model:
+        class: LGBModel
+        module_path: qlib.contrib.model.gbdt
+        kwargs:
+            loss: mse
+            colsample_bytree: 0.8879
+            learning_rate: 0.2
+            subsample: 0.8789
+            lambda_l1: 205.6999
+            lambda_l2: 580.9768
+            max_depth: 8
+            num_leaves: 210
+            num_threads: 4
+    dataset:
+        class: DatasetH
+        module_path: qlib.data.dataset
+        kwargs:
+            handler:
+                class: Alpha158
+                module_path: qlib.contrib.data.handler
+                kwargs: *data_handler_config
+            segments:
+                train: [2020-01-01, 2022-12-31]
+                valid: [2023-01-01, 2023-12-31]
+                test: [2024-01-01, 2026-04-05]
+    record:
+        - class: SignalRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+              model: <MODEL>
+              dataset: <DATASET>
+        - class: SigAnaRecord
+          module_path: qlib.workflow.record_temp
+          kwargs:
+              ana_long_short: False
+              ann_scaler: 252
+        # PortAnaRecord disabled: no benchmark index downloaded for NSE yet.
+        # Re-enable after downloading ^NSEI data and adding it to the qlib dir.
+        # - class: PortAnaRecord
+        #   module_path: qlib.workflow.record_temp
+        #   kwargs:
+        #       config: *port_analysis_config

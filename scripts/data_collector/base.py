@@ -40,6 +40,7 @@ class BaseCollector(abc.ABC):
         delay=0,
         check_data_length: int = None,
         limit_nums: int = None,
+        offset_nums: int = None,
     ):
         """
 
@@ -63,6 +64,8 @@ class BaseCollector(abc.ABC):
             check data length, if not None and greater than 0, each symbol will be considered complete if its data length is greater than or equal to this value, otherwise it will be fetched again, the maximum number of fetches being (max_collector_count). By default None.
         limit_nums: int
             using for debug, by default None
+        offset_nums: int
+            skip the first N symbols in the instrument list, by default None (start from 0)
         """
         self.save_dir = Path(save_dir).expanduser().resolve()
         self.save_dir.mkdir(parents=True, exist_ok=True)
@@ -78,6 +81,12 @@ class BaseCollector(abc.ABC):
         self.end_datetime = self.normalize_end_datetime(end)
 
         self.instrument_list = sorted(set(self.get_instrument_list()))
+
+        if offset_nums is not None:
+            try:
+                self.instrument_list = self.instrument_list[int(offset_nums):]
+            except Exception as e:
+                logger.warning(f"Cannot use offset_nums={offset_nums}, the parameter will be ignored")
 
         if limit_nums is not None:
             try:
@@ -371,6 +380,7 @@ class BaseRun(abc.ABC):
         end=None,
         check_data_length: int = None,
         limit_nums=None,
+        offset_nums=None,
         **kwargs,
     ):
         """download data from Internet
@@ -389,6 +399,8 @@ class BaseRun(abc.ABC):
             check data length, if not None and greater than 0, each symbol will be considered complete if its data length is greater than or equal to this value, otherwise it will be fetched again, the maximum number of fetches being (max_collector_count). By default None.
         limit_nums: int
             using for debug, by default None
+        offset_nums: int
+            skip the first N symbols in the instrument list, by default None
 
         Examples
         ---------
@@ -409,6 +421,7 @@ class BaseRun(abc.ABC):
             interval=self.interval,
             check_data_length=check_data_length,
             limit_nums=limit_nums,
+            offset_nums=offset_nums,
             **kwargs,
         ).collector_data()
 

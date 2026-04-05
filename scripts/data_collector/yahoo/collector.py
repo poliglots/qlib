@@ -37,6 +37,7 @@ from data_collector.utils import (
     get_hs_stock_symbols,
     get_us_stock_symbols,
     get_in_stock_symbols,
+    get_bse_stock_symbols,
     get_br_stock_symbols,
     generate_minutes_calendar_from_daily,
     calc_adjusted_price,
@@ -59,6 +60,7 @@ class YahooCollector(BaseCollector):
         delay=0,
         check_data_length: int = None,
         limit_nums: int = None,
+        offset_nums: int = None,
     ):
         """
 
@@ -82,6 +84,8 @@ class YahooCollector(BaseCollector):
             check data length, by default None
         limit_nums: int
             using for debug, by default None
+        offset_nums: int
+            skip the first N symbols, by default None
         """
         super(YahooCollector, self).__init__(
             save_dir=save_dir,
@@ -93,6 +97,7 @@ class YahooCollector(BaseCollector):
             delay=delay,
             check_data_length=check_data_length,
             limit_nums=limit_nums,
+            offset_nums=offset_nums,
         )
 
         self.init_datetime()
@@ -314,6 +319,32 @@ class YahooCollectorIN1d(YahooCollectorIN):
 
 
 class YahooCollectorIN1min(YahooCollectorIN):
+    pass
+
+
+class YahooCollectorBSE(YahooCollector, ABC):
+    def get_instrument_list(self):
+        logger.info("get BSE stock symbols......")
+        symbols = get_bse_stock_symbols() + ["^BSESN"]  # Sensex index
+        logger.info(f"get {len(symbols)} symbols.")
+        return symbols
+
+    def download_index_data(self):
+        pass
+
+    def normalize_symbol(self, symbol):
+        return code_to_fname(symbol).upper()
+
+    @property
+    def _timezone(self):
+        return "Asia/Kolkata"
+
+
+class YahooCollectorBSE1d(YahooCollectorBSE):
+    pass
+
+
+class YahooCollectorBSE1min(YahooCollectorBSE):
     pass
 
 
@@ -652,14 +683,41 @@ class YahooNormalizeIN1d(YahooNormalizeIN, YahooNormalize1d):
 
 
 class YahooNormalizeIN1min(YahooNormalizeIN, YahooNormalize1min):
+    # NSE/BSE: single session 09:15–15:30 IST, no lunch break
+    AM_RANGE = ("09:15:00", "15:29:00")
+    PM_RANGE = ("09:15:00", "15:29:00")  # same as AM — generate_1min_from_daily merges and deduplicates
     CALC_PAUSED_NUM = False
 
     def _get_calendar_list(self) -> Iterable[pd.Timestamp]:
-        # TODO: support 1min
-        raise ValueError("Does not support 1min")
+        return self.generate_1min_from_daily(self.calendar_list_1d)
 
     def _get_1d_calendar_list(self):
         return get_calendar_list("IN_ALL")
+
+    def symbol_to_yahoo(self, symbol):
+        return fname_to_code(symbol)
+
+
+class YahooNormalizeBSE:
+    def _get_calendar_list(self) -> Iterable[pd.Timestamp]:
+        return get_calendar_list("BSE_ALL")
+
+
+class YahooNormalizeBSE1d(YahooNormalizeBSE, YahooNormalize1d):
+    pass
+
+
+class YahooNormalizeBSE1min(YahooNormalizeBSE, YahooNormalize1min):
+    # BSE: single session 09:15–15:30 IST, no lunch break
+    AM_RANGE = ("09:15:00", "15:29:00")
+    PM_RANGE = ("09:15:00", "15:29:00")
+    CALC_PAUSED_NUM = False
+
+    def _get_calendar_list(self) -> Iterable[pd.Timestamp]:
+        return self.generate_1min_from_daily(self.calendar_list_1d)
+
+    def _get_1d_calendar_list(self):
+        return get_calendar_list("BSE_ALL")
 
     def symbol_to_yahoo(self, symbol):
         return fname_to_code(symbol)
@@ -1002,15 +1060,23 @@ class Run(BaseRun):
 
         # parse index
         _region = self.region.lower()
-        if _region not in ["cn", "us"]:
+        # Maps region → (index_list, module_name)
+        # BSE and IN both live in in_index collector
+        _region_index_map = {
+            "cn":  (["CSI100", "CSI300"],                    "cn_index"),
+            "us":  (["SP500", "NASDAQ100", "DJIA", "SP400"], "us_index"),
+            "in":  (["NIFTY50", "NIFTY500"],                 "in_index"),
+            "bse": (["SENSEX"],                              "in_index"),
+        }
+        if _region not in _region_index_map:
             logger.warning(f"Unsupported region: region={_region}, component downloads will be ignored")
             return
-        index_list = ["CSI100", "CSI300"] if _region == "cn" else ["SP500", "NASDAQ100", "DJIA", "SP400"]
+        index_list, market_index = _region_index_map[_region]
         get_instruments = getattr(
-            importlib.import_module(f"data_collector.{_region}_index.collector"), "get_instruments"
+            importlib.import_module(f"data_collector.{market_index}.collector"), "get_instruments"
         )
         for _index in index_list:
-            get_instruments(str(qlib_data_1d_dir), _index, market_index=f"{_region}_index")
+            get_instruments(str(qlib_data_1d_dir), _index, market_index=market_index)
 
 
 if __name__ == "__main__":
