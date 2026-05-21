@@ -61,6 +61,11 @@ dev = [
   "pytest",
   "statsmodels",
 ]
+nse = [
+  "torch",
+  "xgboost",
+  "catboost",
+]
 # On macos-13 system, when using python version greater than or equal to 3.10,
 # pytorch can't fully support Numpy version above 2.0, so, when you want to install torch,
 # it will limit the version of Numpy less than 2.0.
@@ -123,3 +128,11 @@ qrun = "qlib.cli.run:run"
 local_scheme = "no-local-version"
 version_scheme = "guess-next-dev"
 write_to = "qlib/_version.py"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
