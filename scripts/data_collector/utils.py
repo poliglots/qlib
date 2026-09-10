@@ -378,8 +378,9 @@ def get_in_stock_symbols(qlib_data_path: [str, Path] = None) -> list:
 
     @deco_retry
     def _get_nifty():
-        url = f"https://www1.nseindia.com/content/equities/EQUITY_L.csv"
-        df = pd.read_csv(url)
+        # file is downloaded from "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
+        file = f"csv/EQUITY_L.csv"
+        df = pd.read_csv(file)
         df = df.rename(columns={"SYMBOL": "Symbol"})
         df["Symbol"] = df["Symbol"] + ".NS"
         _symbols = df["Symbol"].dropna()
