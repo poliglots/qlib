@@ -5,7 +5,7 @@ QRUN := $(VENV)/qrun
 UVICORN := $(VENV)/uvicorn
 
 MODEL ?= lightgbm
-START_DATE ?= 2020-01-01
+START_DATE ?= 2026-09-09
 END_DATE ?= $(shell date +%Y-%m-%d)
 QLIB_DATA_DIR ?= $(HOME)/.qlib/qlib_data/nse_data
 HOST ?= 0.0.0.0
